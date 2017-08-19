@@ -16,11 +16,8 @@ using ImageMultimap = std::multimap<int, Image>;
 
 class ImageConverter {
 public:
-  ImageConverter(std::string baseDirectory);
-  void getUserInputs();
-  void loadNecessaryFiles();
-  void calculateConductanceMaps();
-  void summarizeSelectedPixels();
+  ImageConverter(std::string);
+  void chooseProgramTypeAndExecute();
 
 private:
   std::string date;
@@ -30,6 +27,9 @@ private:
   std::string kMatrixLocation;
   std::string programInputFile;
 
+  std::pair<int, int> topLeftWindowCoordinate;
+  std::pair<int, int> bottomRightWindowCoordinate;
+
   Image kMatrix;
   int rValue;
   ImageMultimap rawTemperatureImages;
@@ -37,6 +37,22 @@ private:
   std::map<int, double> airTemp;
   std::map<int, double> wa;
   std::map<int, Image> conductanceImages;
+
+  // Main program input selection
+  int getProgramExecutionType();
+
+  // Main Conductance Calculation Program Execution
+  void runConductanceMapCreationProgram();
+  void getUserInputs();
+  void loadNecessaryFiles();
+  void calculateConductanceMaps();
+  void summarizeSelectedPixels();
+
+  // Main KMatrix Calculation Program Execution
+  void runKMatrixCreationProgram();
+
+  // Main Pixel Calculation Program Execution
+  void runPixelSummaryProgram();
 
   // Functions dealing with user input
   bool checkCorrectLocation(std::string, std::string);
@@ -47,18 +63,23 @@ private:
   void getKMatrix();
   void getRValue();
   void getProgramInputFile();
+  void getWindowCoordinates();
+  bool getYesNoResponseFromUser();
 
   // Functions dealing with loading data from files
   void loadKMatrix();
   void loadDataFile();
   void loadTemperatureData();
+  void loadTempFile(std::string);
+  bool confirmShouldLoadImageBasedOnDataFile(std::string);
   Image loadImageFromFile(std::string fileName);
   void parseInputFileLine(std::istringstream &);
+  std::vector<double> parseRow(std::string &);
 
   // Functions dealing with converting data to conductance
   void checkDataAndImageNumberCompatability();
   bool dataFileNumberHasMatchingTempFile(int);
-  void saveImage(const std::string &fileName, const QImage &image);
+  void saveImage(const std::string &fileName, const Image &image);
 
   // Fuctions dealing with the averaging of temperature images
   void averageRawTemperatureImages();
@@ -69,7 +90,16 @@ private:
 
   // std::vector<int> getImageNumbers();
   void createConductanceMaps();
-  void saveConductanceMaps();
+  Image createConductanceImage(int imageNumber, const Image &);
+  double calculateConductance(int, int, int, double);
+  double getAirTemp(int);
+  double getWaValue(int);
+  double getWpValue(double);
+
+  // Functions dealing with converting from Excel coordinates to Standard
+  std::pair<int, int> convertExcelNumberToStandard(std::string);
+  int convertExcelXCoordinate(std::string);
+  int getCharValue(char);
 
   // Functions dealing with saving off selected pixels data
   void getPixelChoicesFromUser();

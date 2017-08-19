@@ -1,7 +1,9 @@
 #include "ImageConverter.hpp"
+#include <boost/filesystem.hpp>
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
+#include <math.h>
 
 /* Constructor for the Image Converter. Takes a string that holds the base
  * working directory for all of the project. */
@@ -10,14 +12,57 @@ ImageConverter::ImageConverter(std::string baseDirectory)
 
 ///////////////////////// INPUT FUNCTIONS //////////////////////////////////////
 
+int ImageConverter::getProgramExecutionType() {
+  std::cout << "What type of program would you like to run?" << std::endl;
+  std::cout << "\tEnter '1' to create a K Matrix." << std::endl;
+  std::cout << "\tEnter '2' to create Conductance Maps." << std::endl;
+  std::cout << "\tEnter '3' to analyze patches of previously created "
+               "conductance maps."
+            << std::endl;
+  std::string choice;
+  std::getline(std::cin, choice);
+  return std::stoi(choice);
+}
+
+void ImageConverter::chooseProgramTypeAndExecute() {
+  int choice = getProgramExecutionType();
+  switch (choice) {
+  case 1:
+    runKMatrixCreationProgram();
+    break;
+  case 2:
+    runConductanceMapCreationProgram();
+    break;
+  case 3:
+    runPixelSummaryProgram();
+    break;
+  }
+}
+
+void ImageConverter::runConductanceMapCreationProgram() {
+  getUserInputs();
+  loadNecessaryFiles();
+  calculateConductanceMaps();
+  summarizeSelectedPixels();
+}
+
+void ImageConverter::runKMatrixCreationProgram() {
+  std::cout << "Creating K Matrix..." << std::endl;
+}
+
+void ImageConverter::runPixelSummaryProgram() {
+  std::cout << "Calculating Pixel Information..." << std::endl;
+}
+
 /* Function that gets all the necessary inputs from the user. */
 void ImageConverter::getUserInputs() {
   getDate();
+  getRValue();
+  getWindowCoordinates();
   getKMatrix();
   getRawTemperatureDir();
   getProgramInputFile();
   getBaseDir();
-  getRValue();
 }
 
 /* Gets the date from the user. Uses this to try and guess where the rest of the
@@ -26,6 +71,32 @@ void ImageConverter::getDate() {
   std::cout << "Please enter the date of the data used (YYYY-MM-DD)."
             << std::endl;
   std::getline(std::cin, date);
+}
+
+void ImageConverter::getWindowCoordinates() {
+  std::string topLeftCoordinate = "EX72";
+  std::string bottomRightCoordinate = "VN434";
+
+  std::cout << "Are the window coordinates you'd like to crop the images to : "
+               "( " +
+                   topLeftCoordinate + ", " + bottomRightCoordinate +
+                   " )? [Enter y/n]"
+            << std::endl;
+  bool answeredYes = getYesNoResponseFromUser();
+  if (!answeredYes) {
+    std::cout << "Please enter the Excel coordinate of the top left pixel of "
+                 "the window."
+              << std::endl;
+    std::getline(std::cin, topLeftCoordinate);
+    std::cout << "Please enter the Excel coordinate of the bottom right pixel "
+                 "of the window."
+              << std::endl;
+    std::getline(std::cin, bottomRightCoordinate);
+  }
+
+  topLeftWindowCoordinate = convertExcelNumberToStandard(topLeftCoordinate);
+  bottomRightWindowCoordinate =
+      convertExcelNumberToStandard(bottomRightCoordinate);
 }
 
 /* Asks for the appropriate location of the KMatrix. This tries to appropriately
@@ -90,10 +161,14 @@ void ImageConverter::getRValue() {
  * Otherwise it returns false. */
 bool ImageConverter::checkCorrectLocation(std::string outputMessage,
                                           std::string assumedLocation) {
-  std::string correctLocation;
   std::cout << "Is the location of the " << outputMessage << " you wish to use \
   \'" << assumedLocation
             << "\'? [Enter y/n]" << std::endl;
+  return getYesNoResponseFromUser();
+}
+
+bool ImageConverter::getYesNoResponseFromUser() {
+  std::string correctLocation;
   std::getline(std::cin, correctLocation);
 
   if (correctLocation[0] == 'y' || correctLocation[0] == 'Y') {
@@ -101,8 +176,10 @@ bool ImageConverter::checkCorrectLocation(std::string outputMessage,
   } else if (correctLocation[0] == 'n' || correctLocation[0] == 'N') {
     return false;
   } else {
-    std::cout << "INVALID RESPONSE. Please try again." << std::endl;
-    return checkCorrectLocation(outputMessage, assumedLocation);
+    std::cout
+        << "INVALID RESPONSE. Please enter either 'y' or 'n'. Please try again."
+        << std::endl;
+    return getYesNoResponseFromUser();
   }
 }
 
@@ -128,13 +205,6 @@ void ImageConverter::loadNecessaryFiles() {
 
 void ImageConverter::loadKMatrix() {
   kMatrix = loadImageFromFile(kMatrixLocation);
-  // for (auto &&row : kMatrix) {
-  //   for (auto &&entry : row) {
-  //     std::cout << entry << " ";
-  //   }
-  //   std::cout << std::endl << std::endl << std::endl;
-  // }
-  // std::cout << "Completed loading KMatrix" << std::endl;
 }
 
 void ImageConverter::loadDataFile() {
@@ -153,8 +223,6 @@ void ImageConverter::loadDataFile() {
   }
 
   inputFile.close();
-
-  // std::cout << "Completed loading program's input file" << std::endl;
 }
 
 void ImageConverter::parseInputFileLine(std::istringstream &rowToParse) {
@@ -163,23 +231,19 @@ void ImageConverter::parseInputFileLine(std::istringstream &rowToParse) {
   // Read image number
   std::getline(rowToParse, data, ',');
   int imageNumber = std::stoi(data);
-  // std::cout << imageNumber;
 
   // Read air temperature;
   std::getline(rowToParse, data, ',');
   double rowsAirTemp = std::stod(data);
   airTemp.insert(std::make_pair(imageNumber, rowsAirTemp));
-  // std::cout << " " << rowsAirTemp;
 
   // Read Wa
   std::getline(rowToParse, data, ',');
   double rowsWa = std::stod(data);
   wa.insert(std::make_pair(imageNumber, rowsWa));
-  // std::cout << " " << rowsWa << std::endl;
 }
 
 void ImageConverter::loadTemperatureData() {
-  std::vector<std::string> list;
   DIR *rawTemperatureImagesDirectory;
   struct dirent *currentFile;
 
@@ -188,31 +252,37 @@ void ImageConverter::loadTemperatureData() {
     while ((currentFile = readdir(rawTemperatureImagesDirectory))) {
       if (currentFile->d_name[0] == '.')
         continue;
-      std::string fileName = currentFile->d_name;
-
-      std::string imageNumber = fileName.substr(fileName.find_last_of("_") + 1);
-      imageNumber = imageNumber.substr(0, imageNumber.find("."));
-
-      // std::cout << currentFile->d_name << " ";
-      // std::cout << imageNumber << std::endl;
-
-      Image temperatureImage =
-          loadImageFromFile(rawTemperatureDirectory + fileName);
-      // for (auto &&row : temperatureImage) {
-      //   for (auto &&entry : row) {
-      //     std::cout << entry << ", ";
-      //   }
-      //   std::cout << std::endl;
-      // }
-
-      rawTemperatureImages.insert(
-          std::make_pair(std::stoi(imageNumber), temperatureImage));
+      else {
+        loadTempFile(currentFile->d_name);
+      }
     }
   }
   closedir(rawTemperatureImagesDirectory);
 }
 
-// TODO: Add error processing (invalid entry)
+void ImageConverter::loadTempFile(std::string fileName) {
+  std::string imageNumber = fileName.substr(fileName.find_last_of("_") + 1);
+  imageNumber = imageNumber.substr(0, imageNumber.find("."));
+
+  if (confirmShouldLoadImageBasedOnDataFile(imageNumber)) {
+    Image temperatureImage =
+        loadImageFromFile(rawTemperatureDirectory + fileName);
+
+    rawTemperatureImages.insert(
+        std::make_pair(std::stoi(imageNumber), temperatureImage));
+  }
+}
+
+bool ImageConverter::confirmShouldLoadImageBasedOnDataFile(
+    std::string imageNumber) {
+  int number = std::stoi(imageNumber);
+  if (airTemp.count(number)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 Image ImageConverter::loadImageFromFile(std::string fileName) {
   Image filesImage;
 
@@ -224,39 +294,51 @@ Image ImageConverter::loadImageFromFile(std::string fileName) {
     std::cout << "Loading file: " << fileName << std::endl;
   }
 
-  // int i = 0;
+  int rowNumber = 0;
   while (!inputFile.eof()) {
-    // std::cout << "Reading row: " << ++i << std::endl;
     std::string inputLine;
     std::getline(inputFile, inputLine);
-    if (!inputLine.empty()) {
-      std::istringstream rowToParse(inputLine);
-      std::vector<double> numbersInRow;
-      for (std::string number; std::getline(rowToParse, number, ',');) {
-        numbersInRow.push_back(std::stod(number));
-      }
+    ++rowNumber;
+    if (rowNumber < topLeftWindowCoordinate.second) {
+      continue;
+    } else if (rowNumber > bottomRightWindowCoordinate.second) {
+      break;
+    }
+    auto numbersInRow = parseRow(inputLine);
+    if (!numbersInRow.empty()) {
       filesImage.push_back(numbersInRow);
     }
   }
-
   inputFile.close();
   return filesImage;
 }
 
+std::vector<double> ImageConverter::parseRow(std::string &inputLine) {
+  std::vector<double> numbersInRow;
+
+  if (!inputLine.empty()) {
+    std::istringstream rowToParse(inputLine);
+
+    int columnNumber = 0;
+    for (std::string number; std::getline(rowToParse, number, ',');) {
+      ++columnNumber;
+      if (columnNumber < topLeftWindowCoordinate.first) {
+        continue;
+      } else if (columnNumber > bottomRightWindowCoordinate.first) {
+        break;
+      }
+      numbersInRow.push_back(std::stod(number));
+    }
+  }
+  return numbersInRow;
+}
+
 ////////////////// CONVERTING DATA TO CONDUCTANCE FUNCTIONS ////////////////////
 void ImageConverter::calculateConductanceMaps() {
-  // std::cout << "Date: " << date << std::endl;
-  // std::cout << "Base working directory: " << baseWorkingDirectory <<
-  // std::endl;
-  // std::cout << "Base save directory: " << baseSaveDirectory << std::endl;
-  // std::cout << "Raw temperature directory: " << rawTemperatureDirectory
-  //           << std::endl;
-
   checkDataAndImageNumberCompatability();
   averageRawTemperatureImages();
   saveAveragedTemperatureImages();
   createConductanceMaps();
-  saveConductanceMaps();
 }
 
 void ImageConverter::checkDataAndImageNumberCompatability() {
@@ -285,12 +367,6 @@ void ImageConverter::averageRawTemperatureImages() {
   for (ImageMultimap::iterator it = rawTemperatureImages.begin();
        it != rawTemperatureImages.end();
        it = rawTemperatureImages.upper_bound(it->first)) {
-
-    // Print number of images
-    // std::cout << "The key: " << it->first << " has "
-    //           << rawTemperatureImages.count(it->first) << " entries."
-    //           << std::endl;
-
     // Average all images with that key.
     averageImages(it->first, rawTemperatureImages.equal_range(it->first));
   }
@@ -302,71 +378,51 @@ void ImageConverter::averageImages(
 
   std::cout << "Averaging temperature images labeled: " << imageKey
             << std::endl;
-  // int imageHeight = kMatrix.size();
-  // int imageWidth = kMatrix[0].size();
-  // std::cout << "Image height : " << imageHeight << std::endl;
-  // std::cout << "Image width : " << imageWidth << std::endl;
 
-  // Create new image with blank entires
+  // Create new image that will hold the averaged temperature images
   Image averagedImage;
-  // averagedImage.resize(imageHeight + 1);
-  // for (auto &&row : averagedImage) {
-  //   row.resize(imageWidth);
-  // }
 
   // For every entry in the new image
   for (int row = 0; row < range.first->second.size(); ++row) {
     std::vector<double> newRow;
     for (int column = 0; column < range.first->second[row].size(); ++column) {
-      // std::cout << "Image location: " << row << ", " << column << std::endl;
-      // average the entries of the images with that current value
-
+      // Sum the values
       double sumOfValues = 0.0;
       for (ImageMultimap::iterator it = range.first; it != range.second; ++it) {
-        // std::cout << it->second[row][column] << ",";
         sumOfValues += it->second[row][column];
-        // std::cout << "After addition" << std::endl;
       }
+      // Then average them
       double average = sumOfValues / rawTemperatureImages.count(imageKey);
-      // averagedImage[row].push_back(average);
-      //                       std::distance(range.first, range.second));
       newRow.push_back(average);
-      // std::cout << "Average: " << average << std::endl;
     }
     averagedImage.push_back(newRow);
   }
+
+  // Add new image to list to use
   averagedTemperatureImages.insert(std::make_pair(imageKey, averagedImage));
 }
 
 void ImageConverter::saveAveragedTemperatureImages() {
   std::ofstream outputFile;
+  boost::filesystem::path dir(baseSaveDirectory + "AverageTempImages/");
+  boost::filesystem::create_directory(dir);
+
   std::string fileName =
       baseSaveDirectory + "AverageTempImages/" + date + "_AverageTemp_";
 
   for (auto &&image : averagedTemperatureImages) {
     std::string fullName = fileName + std::to_string(image.first) + ".csv";
-    outputFile.open(fullName);
-    std::cout << "Saving file: " << fullName << std::endl;
-    if (outputFile.is_open()) {
-      for (auto &&row : image.second) {
-        for (auto &&entry : row) {
-          outputFile << entry << ",";
-        }
-        outputFile << std::endl;
-      }
-      outputFile.close();
-    } else {
-      std::cout << "Error opening file" << std::endl;
-    }
+    saveImage(fullName, image.second);
   }
 }
 
 void ImageConverter::saveImage(const std::string &fileName,
-                               const QImage &image) {
+                               const Image &image) {
   std::ofstream outputFile;
   outputFile.open(fileName);
 
   if (outputFile.is_open()) {
+    std::cout << "Saving file: " << fileName << std::endl;
     for (auto &&row : image) {
       for (auto &&entry : row) {
         outputFile << entry << ",";
@@ -375,37 +431,126 @@ void ImageConverter::saveImage(const std::string &fileName,
     }
     outputFile.close();
   } else {
-    std::cout << "Error opening file" << std::endl;
+    throw std::runtime_error("ERROR OPENING FILE: " + fileName);
+    // std::cout << "ERROR OPENING FILE: " << fileName << std::endl;
   }
 }
 
-// std::vector<int> ImageConverter::getImageNumbers() {
-//   // std::vector<int> imageNumbers;
-//   // for (auto &&image : rawTemperatureImages) {
-//   //   if (std::find(imageNumbers.begin(), imageNumbers.end(), image.first)
-//   ==
-//   //       imageNumbers.end()) {
-//   //     std::cout << image.first;
-//   //     imageNumbers.push_back(image.first);
-//   //   }
-//   // }
-//   // return imageNumbers;
-//
-//   std::vector<int> imageNumbers;
-//   for (std::multimap<int, Image>::iterator it = rawTemperatureImages.begin();
-//        it != rawTemperatureImages.end();
-//        it = rawTemperatureImages.upper_bound(it->first)) {
-//     std::cout << it->first;
-//     imageNumbers.push_back(it->first);
-//   }
-//   return imageNumbers;
-// }
+void ImageConverter::createConductanceMaps() {
+  std::string fileName =
+      baseSaveDirectory + "ConductanceImages/" + date + "_Conductance_";
+  boost::filesystem::path dir(baseSaveDirectory + "ConductanceImages/");
+  boost::filesystem::create_directory(dir);
+  for (auto &&tempImagePair : averagedTemperatureImages) {
+    Image conductanceImage =
+        createConductanceImage(tempImagePair.first, tempImagePair.second);
+    std::string fullFileName =
+        fileName + std::to_string(tempImagePair.first) + ".csv";
+    saveImage(fullFileName, conductanceImage);
+  }
+}
 
-void ImageConverter::createConductanceMaps() {}
+Image ImageConverter::createConductanceImage(int imageNumber,
+                                             const Image &tempImage) {
+  Image conductanceImage;
+  for (int row = 0; row < tempImage.size(); ++row) {
+    std::vector<double> newRow;
+    for (int column = 0; column < tempImage.at(row).size(); ++column) {
+      newRow.push_back(calculateConductance(imageNumber, row, column,
+                                            tempImage.at(row).at(column)));
+    }
+    conductanceImage.push_back(newRow);
+  }
+  return conductanceImage;
+}
 
-void ImageConverter::saveConductanceMaps() {}
+double ImageConverter::calculateConductance(int imageNumber, int row,
+                                            int column, double pixelTemp) {
 
-//////////////////////// SELECTED PIXELS CONVERSION ////////////////////////////
+  // g = ( R + K(Ta - Tp) ) / ( Lw * (wp - wa) )
+  const double Lw = 40.68;
+  double K = kMatrix.at(row).at(column);
+  double Ta = getAirTemp(imageNumber);
+  double Wa = getWaValue(imageNumber);
+  double Wp = getWpValue(pixelTemp);
+
+  double numerator = rValue + K * (Ta - pixelTemp);
+  double denominator = Lw * (Wp - Wa);
+  return numerator / denominator;
+}
+
+double ImageConverter::getAirTemp(int imageNumber) {
+  auto it = airTemp.find(imageNumber);
+  if (it != airTemp.end()) {
+    return it->second;
+  } else {
+    throw std::runtime_error(
+        "Temperature image does not have corresponding air temp value.");
+  }
+}
+
+double ImageConverter::getWaValue(int imageNumber) {
+  auto it = wa.find(imageNumber);
+  if (it != wa.end()) {
+    return it->second;
+  } else {
+    throw std::runtime_error(
+        "Temperature image does not have corresponding wa value.");
+  }
+}
+
+double ImageConverter::getWpValue(double pixelTemp) {
+  // w(p) = w0 * exp( -Tw / T(p))
+
+  const double w0 = 6.57959 * pow(10, 8);
+  const double Tw = 4982.85;
+
+  return w0 * exp(-Tw / (pixelTemp + 273.15));
+}
+
+//////////////////////// SELECTED PIXELS CONVERSION
+/////////////////////////////
+std::pair<int, int>
+ImageConverter::convertExcelNumberToStandard(std::string number) {
+  // parse into ABC section (x direction) and 123 section (y direction).
+  auto locationOfFirstNumber = number.find_first_of("1234567890");
+  auto excelXCoordinate = number.substr(0, locationOfFirstNumber);
+  auto excelYCoordinate = number.substr(locationOfFirstNumber);
+  int rawXCoordinate =
+      convertExcelXCoordinate(number.substr(0, locationOfFirstNumber));
+  int rawYCoordinate = std::stoi(excelYCoordinate) - 1;
+
+  std::cout << "Excel X Coordinate: " << excelXCoordinate << std::endl;
+  std::cout << "Excel Y Coordinate: " << excelYCoordinate << std::endl;
+  std::cout << "Raw X Coordinate: " << rawXCoordinate << std::endl;
+  std::cout << "Raw Y Coordinate: " << rawYCoordinate << std::endl;
+
+  return std::pair<int, int>(rawXCoordinate, rawYCoordinate);
+}
+
+int ImageConverter::convertExcelXCoordinate(std::string excelXCoordinate) {
+  int stringLength = excelXCoordinate.size();
+  int sum = 0;
+  for (int i = 0; i < stringLength; ++i) {
+    auto charValue = getCharValue(excelXCoordinate[i]);
+    sum += charValue * pow(26, stringLength - 1 - i);
+  }
+  return sum - 1;
+}
+
+int ImageConverter::getCharValue(char character) {
+  if (character >= 'A' && character <= 'Z') {
+    return character - 'A' + 1;
+  } else if (character >= 'a' && character <= 'z') {
+    return character - 'a' + 1;
+  } else {
+    std::string message = "Do not recognize excel x coordinate: '";
+    message.push_back(character);
+    message.append("'");
+    throw std::runtime_error(message);
+  }
+}
+
 void ImageConverter::summarizeSelectedPixels() {
   getPixelChoicesFromUser();
   createFile();

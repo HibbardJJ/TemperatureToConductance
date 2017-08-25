@@ -8,10 +8,6 @@ int main(void) {
 
   ImageConverter temperatureToConductance(baseDirectory);
   temperatureToConductance.chooseProgramTypeAndExecute();
-  // temperatureToConductance.getUserInputs();
-  // temperatureToConductance.loadNecessaryFiles();
-  // temperatureToConductance.calculateConductanceMaps();
-  // temperatureToConductance.summarizeSelectedPixels();
   return 0;
 }
 

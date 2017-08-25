@@ -13,6 +13,7 @@
 
 using Image = std::vector<std::vector<double>>;
 using ImageMultimap = std::multimap<int, Image>;
+using Coordinate = std::pair<int, int>;
 
 class ImageConverter {
 public:
@@ -27,8 +28,8 @@ private:
   std::string kMatrixLocation;
   std::string programInputFile;
 
-  std::pair<int, int> topLeftWindowCoordinate;
-  std::pair<int, int> bottomRightWindowCoordinate;
+  Coordinate topLeftWindowCoordinate;
+  Coordinate bottomRightWindowCoordinate;
 
   Image kMatrix;
   int rValue;
@@ -50,9 +51,16 @@ private:
 
   // Main KMatrix Calculation Program Execution
   void runKMatrixCreationProgram();
+  void loadNecessaryKMatrixFiles();
+  void calculateKMatrix();
+  void createMapOfKMatrices(std::map<int, Image> &);
+  void averageKMatricesForFinal(const std::map<int, Image> &);
+  Image getKMatrixFromTemperatureImage(double airTemp, const Image &);
 
   // Main Pixel Calculation Program Execution
   void runPixelSummaryProgram();
+  void readAverageTemperatureImages();
+  void readConductanceImages();
 
   // Functions dealing with user input
   bool checkCorrectLocation(std::string, std::string);
@@ -70,7 +78,7 @@ private:
   void loadKMatrix();
   void loadDataFile();
   void loadTemperatureData();
-  void loadTempFile(std::string);
+  // std::pair<int, Image> loadImageFile(std::string);
   bool confirmShouldLoadImageBasedOnDataFile(std::string);
   Image loadImageFromFile(std::string fileName);
   void parseInputFileLine(std::istringstream &);
@@ -97,13 +105,18 @@ private:
   double getWpValue(double);
 
   // Functions dealing with converting from Excel coordinates to Standard
-  std::pair<int, int> convertExcelNumberToStandard(std::string);
+  Coordinate convertExcelNumberToStandard(std::string);
   int convertExcelXCoordinate(std::string);
   int getCharValue(char);
 
   // Functions dealing with saving off selected pixels data
-  void getPixelChoicesFromUser();
-  void createFile();
+  std::vector<std::string> getPixelChoicesFromUser();
+  void createSelectedPixelsFile(const std::vector<std::string> &);
+  void writeCoordinateHeader(std::ofstream &, const Coordinate &);
+  void printParticularPixelData(std::ofstream &, const Coordinate &);
+  double getPixelTemp(int, const Coordinate &);
+  double getLeafletTemp(int, const Coordinate &);
+  double getLeafletConductance(const Image &, const Coordinate &);
 };
 
 #endif

@@ -1,5 +1,4 @@
 #include "ImageConverter.hpp"
-#include <boost/filesystem.hpp>
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
@@ -82,7 +81,7 @@ void ImageConverter::getBaseDir() {
  * project. */
 void ImageConverter::getKMatrix() {
   std::string usrOutputMessage = "K Matrix";
-  kMatrixLocation = baseWorkingDirectory + "KMatrix/KMatrix.csv";
+  kMatrixLocation = baseWorkingDirectory + "KMatrix/";
 
   if (!checkCorrectLocation(usrOutputMessage, kMatrixLocation)) {
     kMatrixLocation = getCorrectLocation(usrOutputMessage);
@@ -100,7 +99,8 @@ void ImageConverter::getRValue() {
 /* Guesses and asks to confirm the appropriate location of the file that holds
  * some necessary input for the program. The program expects the following
  * columns:
- *    Image Number (imageName_#) | Avg Air Temperature | Average W_a (xout)
+ *    Temperature Specifier | KMatrix Specifier | LF Thermocouple | LB
+ *    Thermocouple | RF Thermocouple | RB Thermocouple | Wa
  */
 void ImageConverter::getProgramInputFile() {
   std::string usrOutputMessage = "program input file";
@@ -213,57 +213,75 @@ void ImageConverter::getUserInputs() {
 
 /* Runs the necessary functions to create/save a KMatrix */
 void ImageConverter::runKMatrixCreationProgram() {
-  std::cout << "Creating K Matrix..." << std::endl;
-  getUserInputs();
-  loadNecessaryKMatrixFiles();
-  calculateKMatrix();
-  saveImage(kMatrixLocation, kMatrix);
+  // std::cout << "Creating K Matrix..." << std::endl;
+  getDate();
+  boost::filesystem::path path(baseWorkingDirectory + "KMatrix/" + date);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(path); itr != end_itr; ++itr) {
+    // If it's not a directory and the path contains
+    if (boost::filesystem::is_directory(itr->path()) &&
+        askIfKMatrixShouldBeCreated(itr->path())) {
+      createKMatrixFromImagesInPath(itr->path());
+    }
+  }
 }
+
+bool ImageConverter::askIfKMatrixShouldBeCreated(boost::filesystem::path path) {
+  std::cout
+      << "Would you like to create a KMatrix from the files in the directory \""
+      << path << "\"?" << std::endl;
+  return getYesNoResponseFromUser();
+}
+
+void ImageConverter::createKMatrixFromImagesInPath(
+    boost::filesystem::path path) {}
 
 /* Loads necessary files to create a KMatrix */
 void ImageConverter::loadNecessaryKMatrixFiles() {
   loadDataFile();
-  loadTemperatureData();
+  readTemperatureImagesFromDirectory(baseSaveDirectory + "AverageTempImages/");
 }
 
 /* Runs the necessary functions to calculate the KMatrix and save it to the
 member variable kMatrix. */
 void ImageConverter::calculateKMatrix() {
-  checkDataAndImageNumberCompatability();
-  averageRawTemperatureImages();
-  saveAveragedTemperatureImages();
-  std::map<int, Image> kMatrices;
-  createMapOfKMatrices(kMatrices);
-  averageKMatricesForFinal(kMatrices);
+  // checkDataAndImageNumberCompatability();
+  // averageRawTemperatureImages();
+  // saveAveragedTemperatureImages();
+  // std::map<std::string, Image> kMatrices;
+  // createMapOfKMatrices(kMatrices);
+  // averageKMatricesForFinal(kMatrices);
 }
 
 /* Creates a map of KMatrices given different input temperature images groups */
-void ImageConverter::createMapOfKMatrices(std::map<int, Image> &kMatrices) {
-  for (auto &&imagePair : averagedTemperatureImages) {
-    double airTemp = getAirTemp(imagePair.first);
-    Image kMatrix = getKMatrixFromTemperatureImage(airTemp, imagePair.second);
-    kMatrices.insert(std::make_pair(imagePair.first, kMatrix));
-  }
-}
+// void ImageConverter::createMapOfKMatrices(
+//     std::map<std::string, Image> &kMatrices) {
+//   for (auto &&imagePair : averagedTemperatureImages) {
+//     double airTemp = getAirTemp(imagePair.first);
+//     Image kMatrix = getKMatrixFromTemperatureImage(airTemp,
+//     imagePair.second);
+//     kMatrices.insert(std::make_pair(imagePair.first, kMatrix));
+//   }
+// }
 
 /* Averages all the different KMatrix solutions for different temperature input
  * groups */
-void ImageConverter::averageKMatricesForFinal(
-    const std::map<int, Image> &kMatrices) {
-  for (int row = 0; row < kMatrices.begin()->second.size(); ++row) {
-    std::vector<double> kMatrixRow;
-    for (int column = 0; column < kMatrices.begin()->second[0].size();
-         ++column) {
-      double sum = 0;
-      for (auto &&matrixPair : kMatrices) {
-        sum += matrixPair.second[row][column];
-      }
-      double average = sum / kMatrices.size();
-      kMatrixRow.push_back(average);
-    }
-    kMatrix.push_back(kMatrixRow);
-  }
-}
+// void ImageConverter::averageKMatricesForFinal(
+//     const std::map<std::string, Image> &kMatrices) {
+//   for (int row = 0; row < kMatrices.begin()->second.size(); ++row) {
+//     std::vector<double> kMatrixRow;
+//     for (int column = 0; column < kMatrices.begin()->second[0].size();
+//          ++column) {
+//       double sum = 0;
+//       for (auto &&matrixPair : kMatrices) {
+//         sum += matrixPair.second[row][column];
+//       }
+//       double average = sum / kMatrices.size();
+//       kMatrixRow.push_back(average);
+//     }
+//     kMatrix.push_back(kMatrixRow);
+//   }
+// }
 
 /* Calculates the value of each pixel in the KMatrix based on air temp, R. */
 Image ImageConverter::getKMatrixFromTemperatureImage(double airTemp,
@@ -289,7 +307,8 @@ Image ImageConverter::getKMatrixFromTemperatureImage(double airTemp,
 void ImageConverter::runConductanceMapCreationProgram() {
   getUserInputs();
   loadNecessaryConductanceProgramFiles();
-  calculateConductanceMaps();
+  saveAveragedTemperatureImages();
+  createConductanceMaps();
   summarizeSelectedPixels();
 }
 
@@ -297,18 +316,9 @@ void ImageConverter::runConductanceMapCreationProgram() {
 void ImageConverter::loadNecessaryConductanceProgramFiles() {
   std::cout << "Loading necessary files. This could take a while..."
             << std::endl;
-  loadKMatrix();
+  // loadKMatrix();
   loadDataFile();
-  loadTemperatureData();
-}
-
-// Runs functions necessary to confirm data input is compatible, average temp
-// images, and create/save conductance maps.
-void ImageConverter::calculateConductanceMaps() {
-  checkDataAndImageNumberCompatability();
-  averageRawTemperatureImages();
-  saveAveragedTemperatureImages();
-  createConductanceMaps();
+  readTemperatureImagesFromDirectory(rawTemperatureDirectory);
 }
 
 // Creates and saves the conductance maps.
@@ -320,8 +330,7 @@ void ImageConverter::createConductanceMaps() {
   for (auto &&tempImagePair : averagedTemperatureImages) {
     Image conductanceImage =
         createConductanceImage(tempImagePair.first, tempImagePair.second);
-    std::string fullFileName =
-        fileName + std::to_string(tempImagePair.first) + ".csv";
+    std::string fullFileName = fileName + tempImagePair.first + ".csv";
     conductanceImages.insert(
         std::make_pair(tempImagePair.first, conductanceImage));
     saveImage(fullFileName, conductanceImage);
@@ -329,13 +338,13 @@ void ImageConverter::createConductanceMaps() {
 }
 
 // Creates a particular conductance map.
-Image ImageConverter::createConductanceImage(int imageNumber,
+Image ImageConverter::createConductanceImage(std::string imageIdentifier,
                                              const Image &tempImage) {
   Image conductanceImage;
   for (int row = 0; row < tempImage.size(); ++row) {
     std::vector<double> newRow;
     for (int column = 0; column < tempImage.at(row).size(); ++column) {
-      newRow.push_back(calculateConductance(imageNumber, row, column,
+      newRow.push_back(calculateConductance(imageIdentifier, row, column,
                                             tempImage.at(row).at(column)));
     }
     conductanceImage.push_back(newRow);
@@ -344,14 +353,15 @@ Image ImageConverter::createConductanceImage(int imageNumber,
 }
 
 // Calculates the conductance of a single pixel.
-double ImageConverter::calculateConductance(int imageNumber, int row,
-                                            int column, double pixelTemp) {
+double ImageConverter::calculateConductance(std::string imageIdentifier,
+                                            int row, int column,
+                                            double pixelTemp) {
 
   // g = ( R + K(Ta - Tp) ) / ( Lw * (wp - wa) )
   const double Lw = 40.68;
-  double K = kMatrix.at(row).at(column);
-  double Ta = getAirTemp(imageNumber);
-  double Wa = getWaValue(imageNumber);
+  double K = getKMatrix(imageIdentifier).at(row).at(column);
+  double Ta = getAirTemp(imageIdentifier);
+  double Wa = getWaValue(imageIdentifier);
   double Wp = getWpValue(pixelTemp);
 
   double numerator = rValue + K * (Ta - pixelTemp);
@@ -377,75 +387,99 @@ void ImageConverter::summarizeSelectedPixels() {
 // pixel/leaflet summary.
 void ImageConverter::runPixelSummaryProgram() {
   topLeftWindowCoordinate = Coordinate(0, 0);
-  bottomRightWindowCoordinate = Coordinate(100000, 100000);
+  bottomRightWindowCoordinate = Coordinate(1000000, 1000000);
   getDate();
   getBaseDir();
   getProgramInputFile();
   loadDataFile();
-  readAverageTemperatureImages();
-  readConductanceImages();
+  readTemperatureImagesFromDirectory(baseSaveDirectory + "AverageTempImages/");
+  readConductanceImagesFromDirectory();
   std::vector<std::string> coordinatesToAnalyze = getPixelChoicesFromUser();
   createSelectedPixelsFile(coordinatesToAnalyze);
 }
 
-// Reads in average temperature images created by a previous program execution.
-void ImageConverter::readAverageTemperatureImages() {
-  DIR *averageTemperatureImagesDirectory;
-  struct dirent *currentFile;
+void ImageConverter::readTemperatureImagesFromDirectory(
+    const std::string &directoryPath) {
+  boost::filesystem::path temperatureDirectory(directoryPath);
 
-  std::string averageTempDirectoryName =
-      baseSaveDirectory + "AverageTempImages/";
-  averageTemperatureImagesDirectory = opendir(averageTempDirectoryName.c_str());
-  if (averageTemperatureImagesDirectory != NULL) {
-    while ((currentFile = readdir(averageTemperatureImagesDirectory))) {
-      if (currentFile->d_name[0] == '.')
-        continue;
-      else {
-        std::string fileName = averageTempDirectoryName + currentFile->d_name;
-        std::string imageNumber =
-            fileName.substr(fileName.find_last_of("_") + 1);
-        imageNumber = imageNumber.substr(0, imageNumber.find("."));
-        Image tempImage = loadImageFromFile(fileName);
-        averagedTemperatureImages.insert(
-            std::make_pair(std::stoi(imageNumber), tempImage));
-      }
+  if (boost::filesystem::exists(temperatureDirectory) &&
+      boost::filesystem::is_directory(temperatureDirectory)) {
+    for (auto &&identifierTempPair : airTemp) {
+      averagedTemperatureImages.insert(getFilesFromDirectoryWithIdentifier(
+          temperatureDirectory, identifierTempPair.first));
     }
   }
-  closedir(averageTemperatureImagesDirectory);
 }
 
-// Reads in conductance images created by a previous program execution.
-void ImageConverter::readConductanceImages() {
-  DIR *conductanceImageDirectory;
-  struct dirent *currentFile;
-
-  std::string conductanceDirectoryName =
-      baseSaveDirectory + "ConductanceImages/";
-  conductanceImageDirectory = opendir(conductanceDirectoryName.c_str());
-  if (conductanceImageDirectory != NULL) {
-    while ((currentFile = readdir(conductanceImageDirectory))) {
-      if (currentFile->d_name[0] == '.')
-        continue;
-      else {
-        std::string fileName = conductanceDirectoryName + currentFile->d_name;
-        std::string imageNumber =
-            fileName.substr(fileName.find_last_of("_") + 1);
-        imageNumber = imageNumber.substr(0, imageNumber.find("."));
-        Image conductanceImage = loadImageFromFile(fileName);
-        conductanceImages.insert(
-            std::make_pair(std::stoi(imageNumber), conductanceImage));
-      }
+void ImageConverter::readConductanceImagesFromDirectory() {
+  boost::filesystem::path conductanceDirectory(baseSaveDirectory +
+                                               "ConductanceImages/");
+  if (boost::filesystem::exists(conductanceDirectory) &&
+      boost::filesystem::is_directory(conductanceDirectory)) {
+    for (auto &&identifierTempPair : airTemp) {
+      conductanceImages.insert(getFilesFromDirectoryWithIdentifier(
+          conductanceDirectory, identifierTempPair.first));
     }
   }
-  closedir(conductanceImageDirectory);
+}
+
+std::pair<std::string, Image>
+ImageConverter::getFilesFromDirectoryWithIdentifier(
+    boost::filesystem::path path, std::string identifier) {
+  std::vector<Image> images;
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(path); itr != end_itr; ++itr) {
+    std::string pathToFile = itr->path().string();
+    // If it's not a directory and the path contains
+    if (is_regular_file(itr->path()) &&
+        pathToFile.find(identifier) != std::string::npos) {
+      images.push_back(loadImageFromFile(pathToFile));
+    }
+  }
+  return std::pair<std::string, Image>(identifier, getAverageOfImages(images));
+}
+
+Image ImageConverter::getAverageOfImages(const std::vector<Image> &images) {
+  if (images.size() == 0) {
+    throw std::runtime_error(
+        "Error! There were no images to load that match the specifier given.");
+  }
+
+  if (images.size() == 1) {
+    return images.back();
+  }
+
+  Image resultantImage;
+  for (int row = 0; row < images[0].size(); ++row) {
+    std::vector<double> resultantImageRow;
+    for (int column = 0; column < images[0].at(row).size(); ++column) {
+      double sum = 0;
+      for (auto &&image : images) {
+        sum += image.at(row).at(column);
+      }
+      resultantImageRow.push_back(sum / images.size());
+    }
+    resultantImage.push_back(resultantImageRow);
+  }
+  return resultantImage;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 /* FUNCTIONS DEALING WITH LOADING DATA FROM FILES */
 
 // Loads KMatrix to local variable kMatrix.
-void ImageConverter::loadKMatrix() {
-  kMatrix = loadImageFromFile(kMatrixLocation);
+void ImageConverter::loadKMatrix(std::string tempId, std::string kMatrixId) {
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(kMatrixLocation);
+       itr != end_itr; ++itr) {
+    std::string pathToFile = itr->path().string();
+    if (is_regular_file(itr->path()) &&
+        pathToFile.find(kMatrixId) != std::string::npos) {
+      Image kMatrix = loadImageFromFile(pathToFile);
+      kMatrices.insert(std::pair<std::string, Image>(tempId, kMatrix));
+      break;
+    }
+  }
 }
 
 // Loads Data File to appropriate local variables wa and airTemp.
@@ -471,53 +505,31 @@ void ImageConverter::loadDataFile() {
 void ImageConverter::parseInputFileLine(std::istringstream &rowToParse) {
   std::string data;
 
-  // Read image number
+  // Read temperature image identifier
   std::getline(rowToParse, data, ',');
-  int imageNumber = std::stoi(data);
+  std::string imageIdentifier = data;
+
+  // Read kMatrix image identifier
+  std::getline(rowToParse, data, ',');
+  loadKMatrix(imageIdentifier, data);
 
   // Read air temperature;
   std::getline(rowToParse, data, ',');
   double rowsAirTemp = std::stod(data);
-  airTemp.insert(std::make_pair(imageNumber, rowsAirTemp));
+  airTemp.insert(std::make_pair(imageIdentifier, rowsAirTemp));
 
   // Read Wa
   std::getline(rowToParse, data, ',');
   double rowsWa = std::stod(data);
-  wa.insert(std::make_pair(imageNumber, rowsWa));
+  wa.insert(std::make_pair(imageIdentifier, rowsWa));
 }
 
-// Loads the raw temperature data from the filesystem.
-void ImageConverter::loadTemperatureData() {
-  DIR *rawTemperatureImagesDirectory;
-  struct dirent *currentFile;
-
-  rawTemperatureImagesDirectory = opendir(rawTemperatureDirectory.c_str());
-  if (rawTemperatureImagesDirectory != NULL) {
-    while ((currentFile = readdir(rawTemperatureImagesDirectory))) {
-      if (currentFile->d_name[0] == '.')
-        continue;
-      else {
-        std::string fileName = rawTemperatureDirectory + currentFile->d_name;
-        std::string imageNumber =
-            fileName.substr(fileName.find_last_of("_") + 1);
-        imageNumber = imageNumber.substr(0, imageNumber.find("."));
-        if (confirmShouldLoadImageBasedOnDataFile(imageNumber)) {
-          Image tempImage = loadImageFromFile(fileName);
-          rawTemperatureImages.insert(
-              std::make_pair(std::stoi(imageNumber), tempImage));
-        }
-      }
-    }
-    closedir(rawTemperatureImagesDirectory);
-  }
-}
-
-// Double checks that the file should be loaded (its number is specified in data
+// Double checks that the file should be loaded (its number is specified in
+// data
 // file).
 bool ImageConverter::confirmShouldLoadImageBasedOnDataFile(
     std::string imageNumber) {
-  int number = std::stoi(imageNumber);
-  if (airTemp.count(number)) {
+  if (airTemp.count(imageNumber)) {
     return true;
   } else {
     return false;
@@ -610,7 +622,7 @@ void ImageConverter::saveAveragedTemperatureImages() {
       baseSaveDirectory + "AverageTempImages/" + date + "_AverageTemp_";
 
   for (auto &&image : averagedTemperatureImages) {
-    std::string fullName = fileName + std::to_string(image.first) + ".csv";
+    std::string fullName = fileName + image.first + ".csv";
     saveImage(fullName, image.second);
   }
 }
@@ -639,29 +651,34 @@ void ImageConverter::writeCoordinateHeader(std::ofstream &outputFile,
                                            const Coordinate &coordinate) {
   outputFile << "Standard X Coordinate:," << coordinate.first << std::endl;
   outputFile << "Standard Y Coordiante:," << coordinate.second << std::endl;
-  outputFile << "Image Number,, Pixel Temp , Pixel DeltaW , Pixel "
-                "Conductance ,, Leaflet Temp, Leaflet DeltaW, Leaflet "
+  outputFile << "Image identifier, Image Xout/Wa,, Pixel Temp , Pixel "
+                "DeltaW , Pixel "
+                "Conductance ,, Leaflet Temp, Leaflet DeltaW,  Leaflet "
                 "Conductance"
              << std::endl;
 }
 
-// Prints the desired data (temp, conductance, delta w) for each pixel/leaflet.
+// Prints the desired data (temp, conductance, delta w) for each
+// pixel/leaflet.
 void ImageConverter::printParticularPixelData(std::ofstream &outputFile,
                                               const Coordinate &coordinate) {
   std::cout << "Printing coordinate: (" << coordinate.first << ","
             << coordinate.second << ")" << std::endl;
   for (auto &&conductanceImage : conductanceImages) {
-    int imageNumber = conductanceImage.first;
+    std::string imageIdentifier = conductanceImage.first;
 
-    // Print image number
-    outputFile << imageNumber << ",,";
+    // Print image identifier
+    outputFile << imageIdentifier << ",";
+
+    // Print image Wa value
+    double waValue = getWaValue(imageIdentifier);
+    outputFile << waValue << ",,";
 
     // Print pixel temp
-    double pixelTemp = getPixelTemp(imageNumber, coordinate);
+    double pixelTemp = getPixelTemp(imageIdentifier, coordinate);
     outputFile << pixelTemp << ",";
 
     // Print pixel delta w
-    double waValue = getWaValue(imageNumber);
     outputFile << getWpValue(pixelTemp) - waValue << ",";
 
     // Print pixel conductance
@@ -669,90 +686,25 @@ void ImageConverter::printParticularPixelData(std::ofstream &outputFile,
         << (conductanceImage.second).at(coordinate.second).at(coordinate.first)
         << ",,";
 
+    // Alternative
+    // outputFile << calculateConductance(imageIdentifier,
+    // coordinate.second,
+    //                                    coordinate.first, pixelTemp)
+    //            << ",";
+
     // Print leaflet temp
-    double leafletTemp = getLeafletTemp(imageNumber, coordinate);
+    double leafletTemp = getLeafletTemp(imageIdentifier, coordinate);
     outputFile << leafletTemp << ",";
 
-    // TODO: Print leaflet delta w
-    outputFile << getWpValue(leafletTemp) - waValue << ",";
+    // Print leaflet delta w: gets delta w of each pixel and averages
+    outputFile << getLeafletDeltaW(imageIdentifier, coordinate) << ",";
+    // outputFile << getWpValue(leafletTemp) - waValue << ",";
 
-    // Print leaflet conductance
+    // Print leaflet conductance: gets conductance of each pixel and
+    // averages
     outputFile << getLeafletConductance(conductanceImage.second, coordinate)
                << std::endl;
   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-/* FUNCTIONS DEALING WITH DATA INPUT COMPATIBILITY */
-
-// Checks that every entry in the data file has a temperature image to do the
-// calculation with.
-void ImageConverter::checkDataAndImageNumberCompatability() {
-  for (auto &&airTempPair : airTemp) {
-    if (!dataFileNumberHasMatchingTempFile(airTempPair.first)) {
-      throw std::runtime_error(
-          "ERROR! Data file/ temperature image mismatch. The data number " +
-          std::to_string(airTempPair.first) +
-          " does not have any matching temperature images. Please check "
-          "these files exist, and retry running the program.");
-    }
-  }
-}
-
-// Helper file that confirms there is a temperature file with a given key.
-bool ImageConverter::dataFileNumberHasMatchingTempFile(int dataFileNumber) {
-  for (auto &&tempImage : rawTemperatureImages) {
-    if (tempImage.first == dataFileNumber) {
-      return true;
-    }
-  }
-  return false;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-/* FUNCTIONS DEALING WITH AVERING A SERIES OF IMAGES */
-
-// Averages all the raw temperature images groups.
-void ImageConverter::averageRawTemperatureImages() {
-  // For every unique key in the temperature images
-  for (ImageMultimap::iterator it = rawTemperatureImages.begin();
-       it != rawTemperatureImages.end();
-       it = rawTemperatureImages.upper_bound(it->first)) {
-    // Average all images with that key.
-    averageImages(it->first, rawTemperatureImages.equal_range(it->first));
-  }
-}
-
-// Averages a single group of temperature images and saves it to member variable
-// averagedImage.
-void ImageConverter::averageImages(
-    int imageKey,
-    std::pair<ImageMultimap::iterator, ImageMultimap::iterator> range) {
-
-  std::cout << "Averaging temperature images labeled: " << imageKey
-            << std::endl;
-
-  // Create new image that will hold the averaged temperature images
-  Image averagedImage;
-
-  // For every entry in the new image
-  for (int row = 0; row < range.first->second.size(); ++row) {
-    std::vector<double> newRow;
-    for (int column = 0; column < range.first->second[row].size(); ++column) {
-      // Sum the values
-      double sumOfValues = 0.0;
-      for (ImageMultimap::iterator it = range.first; it != range.second; ++it) {
-        sumOfValues += it->second[row][column];
-      }
-      // Then average them
-      double average = sumOfValues / rawTemperatureImages.count(imageKey);
-      newRow.push_back(average);
-    }
-    averagedImage.push_back(newRow);
-  }
-
-  // Add new image to list to use
-  averagedTemperatureImages.insert(std::make_pair(imageKey, averagedImage));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -771,7 +723,8 @@ Coordinate ImageConverter::convertExcelNumberToStandard(std::string number) {
   return Coordinate(rawXCoordinate, rawYCoordinate);
 }
 
-// Converts just the x coordinate (ABC..) of an excel coordinate to standard.
+// Converts just the x coordinate (ABC..) of an excel coordinate to
+// standard.
 int ImageConverter::convertExcelXCoordinate(std::string excelXCoordinate) {
   int stringLength = excelXCoordinate.size();
   int sum = 0;
@@ -799,26 +752,38 @@ int ImageConverter::getCharValue(char character) {
 ////////////////////////////////////////////////////////////////////////////////
 /* FUNCTIONS DEALING WITH GETTING NECESSARY PARAMETERS FOR EQUATIONS */
 
-// Gets the air temperature associated with a specific image number (from data
-// file).
-double ImageConverter::getAirTemp(int imageNumber) {
-  auto it = airTemp.find(imageNumber);
-  if (it != airTemp.end()) {
+Image ImageConverter::getKMatrix(std::string imageIdentifier) {
+  auto it = kMatrices.find(imageIdentifier);
+  if (it != kMatrices.end()) {
     return it->second;
   } else {
-    throw std::runtime_error(
-        "Temperature image does not have corresponding air temp value.");
+    throw std::runtime_error("Temperature image " + imageIdentifier +
+                             " does not have corresponding KMatrix.");
   }
 }
 
-// Get the wa value associated with a specific image number (from data file).
-double ImageConverter::getWaValue(int imageNumber) {
-  auto it = wa.find(imageNumber);
+// Gets the air temperature associated with a specific image number (from
+// data
+// file).
+double ImageConverter::getAirTemp(std::string imageIdentifier) {
+  auto it = airTemp.find(imageIdentifier);
+  if (it != airTemp.end()) {
+    return it->second;
+  } else {
+    throw std::runtime_error("Temperature image " + imageIdentifier +
+                             " does not have corresponding air temp value.");
+  }
+}
+
+// Get the wa value associated with a specific image number (from data
+// file).
+double ImageConverter::getWaValue(std::string imageIdentifier) {
+  auto it = wa.find(imageIdentifier);
   if (it != wa.end()) {
     return it->second;
   } else {
-    throw std::runtime_error(
-        "Temperature image does not have corresponding wa value.");
+    throw std::runtime_error("Temperature image " + imageIdentifier +
+                             " does not have corresponding wa value.");
   }
 }
 
@@ -832,11 +797,19 @@ double ImageConverter::getWpValue(double pixelTemp) {
   return w0 * exp(-Tw / (pixelTemp + 273.15));
 }
 
+double ImageConverter::getDeltaWValue(const std::string &imageIdentifier,
+                                      int row, int column) {
+  double pixelTemp = getPixelTemp(imageIdentifier, Coordinate(column, row));
+  double deltaW = getWpValue(pixelTemp) - getWaValue(imageIdentifier);
+  std::cout << deltaW << std::endl;
+  return deltaW;
+}
+
 // Gets the temperature of a pixel given its image number and coordinate.
-double ImageConverter::getPixelTemp(int imageNumber,
+double ImageConverter::getPixelTemp(std::string imageIdentifier,
                                     const Coordinate &coordinate) {
 
-  auto location = averagedTemperatureImages.find(imageNumber);
+  auto location = averagedTemperatureImages.find(imageIdentifier);
   if (location != averagedTemperatureImages.end()) {
     return (location->second).at(coordinate.second).at(coordinate.first);
   } else {
@@ -846,11 +819,12 @@ double ImageConverter::getPixelTemp(int imageNumber,
   }
 }
 
-// Gets the average temperature of a 9 pixel leaflet centered at the coordinate,
+// Gets the average temperature of a 9 pixel leaflet centered at the
+// coordinate,
 // and with image number specified.
-double ImageConverter::getLeafletTemp(int imageNumber,
+double ImageConverter::getLeafletTemp(std::string imageIdentifier,
                                       const Coordinate &coordinate) {
-  auto location = averagedTemperatureImages.find(imageNumber);
+  auto location = averagedTemperatureImages.find(imageIdentifier);
   if (location != averagedTemperatureImages.end()) {
     Image tempImage = location->second;
     double sum = 0.0;
@@ -871,7 +845,8 @@ double ImageConverter::getLeafletTemp(int imageNumber,
   }
 }
 
-// Gets the average conductance of a 9 pixel leaflet centered at the coordinate,
+// Gets the average conductance of a 9 pixel leaflet centered at the
+// coordinate,
 // and with image number specified.
 double ImageConverter::getLeafletConductance(const Image &conductanceImage,
                                              const Coordinate &coordinate) {
@@ -885,5 +860,24 @@ double ImageConverter::getLeafletConductance(const Image &conductanceImage,
   sum += conductanceImage.at(coordinate.second + 1).at(coordinate.first - 1);
   sum += conductanceImage.at(coordinate.second + 1).at(coordinate.first);
   sum += conductanceImage.at(coordinate.second + 1).at(coordinate.first + 1);
+  return sum / 9.0;
+}
+
+double ImageConverter::getLeafletDeltaW(const std::string &identifier,
+                                        const Coordinate &coordinate) {
+  double sum = 0.0;
+  sum +=
+      getDeltaWValue(identifier, coordinate.second - 1, coordinate.first - 1);
+  sum += getDeltaWValue(identifier, coordinate.second - 1, coordinate.first);
+  sum +=
+      getDeltaWValue(identifier, coordinate.second - 1, coordinate.first + 1);
+  sum += getDeltaWValue(identifier, coordinate.second, coordinate.first - 1);
+  sum += getDeltaWValue(identifier, coordinate.second, coordinate.first);
+  sum += getDeltaWValue(identifier, coordinate.second, coordinate.first + 1);
+  sum +=
+      getDeltaWValue(identifier, coordinate.second + 1, coordinate.first - 1);
+  sum += getDeltaWValue(identifier, coordinate.second + 1, coordinate.first);
+  sum +=
+      getDeltaWValue(identifier, coordinate.second + 1, coordinate.first + 1);
   return sum / 9.0;
 }

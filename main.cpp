@@ -1,13 +1,13 @@
 #include <iostream>
 #include <vector>
 
-#include "ImageConverter.hpp"
+#include "ImageConverter2.hpp"
 
 int main(void) {
   std::string baseDirectory = "/Users/katiesweet/Desktop/Patchy/";
 
   ImageConverter temperatureToConductance(baseDirectory);
-  temperatureToConductance.chooseProgramTypeAndExecute();
+  // temperatureToConductance.chooseProgramTypeAndExecute();
   return 0;
 }
 

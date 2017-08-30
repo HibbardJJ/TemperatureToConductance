@@ -12,8 +12,8 @@ set(SOURCE_FILES
   main.cpp
   #FileSystemAccess.cpp
   #FileSystemAccess.hpp
-  ImageConverter.cpp
-  ImageConverter.hpp
+  ImageConverter2.cpp
+  ImageConverter2.hpp
 )
 
 # add_library(ProjectLibrary

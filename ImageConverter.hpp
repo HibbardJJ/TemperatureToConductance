@@ -1,130 +1,128 @@
-/*
-  Image Converter class
-  Author: Katie Sweet
-*/
-
 #ifndef IMAGE_CONVERTER
 #define IMAGE_CONVERTER
 
 #include <boost/filesystem.hpp>
 #include <map>
-#include <sstream>
 #include <string>
 #include <vector>
 
+using Path = boost::filesystem::path;
 using Image = std::vector<std::vector<double>>;
-using ImageMultimap = std::multimap<std::string, Image>;
+using ImageMap = std::map<std::string, Image>;
+using ImagePair = std::pair<std::string, Image>;
 using Coordinate = std::pair<int, int>;
 
 class ImageConverter {
 public:
-  ImageConverter(std::string);
-  void chooseProgramTypeAndExecute();
+  ImageConverter(const Path &);
 
 private:
   std::string date;
-  std::string baseWorkingDirectory;
-  std::string baseSaveDirectory;
-  std::string rawTemperatureDirectory;
-  std::string kMatrixLocation;
-  std::string programInputFile;
+  int rValue;
 
+  // Holds the paths to important directories/files needed in program.
+  Path baseSaveDirectory;
+  Path programDataInputFile;
+  Path temperatureImagesDirectory;
+  Path kMatrixDirectory;
+
+  // Coordinates needed to crop raw temperature images to correct window size
   Coordinate topLeftWindowCoordinate;
   Coordinate bottomRightWindowCoordinate;
 
-  std::map<std::string, Image> kMatrices;
-  int rValue;
-  std::map<std::string, Image> averagedTemperatureImages;
-  std::map<std::string, double> airTemp;
+  // Maps of data needed in program.
+  // The key of the map is the image identifier
+  ImageMap kMatrices;
+  ImageMap averageTemperatureImages;
+  ImageMap conductanceMaps;
+
+  // The first in the pair is the average air temperature on the left side of
+  // the chamber, and the second in the pair is on the right side of the
+  // chamber.
+  std::map<std::string, std::pair<double, double>> airTemps;
   std::map<std::string, double> wa;
-  std::map<std::string, Image> conductanceImages;
 
-  /* GENERIC USER INPUT */
+  // Main Program Execution
+  void runKMatrixCreationProgram(const Path &);
+  void runConductanceMapCreationProgram(const Path &);
+
+  // Initialize variables particular to each program execution type.
+  void initializeVariablesForKMatrixProgram(const Path &);
+  void initializeVariablesForConductanceMapProgram(const Path &);
+
+  // Basic user input communication.
   int getProgramExecutionType();
-  void getDate();
-  void getRawTemperatureDir();
-  void getBaseDir();
-  void getKMatrix();
-  void getRValue();
-  void getProgramInputFile();
-  void getWindowCoordinates();
-  std::vector<std::string> getPixelChoicesFromUser();
-  bool checkCorrectLocation(std::string, std::string);
-  std::string getCorrectLocation(std::string);
+  void getDateFromUser();
+  void getRValueFromUser();
   bool getYesNoResponseFromUser();
-  void getUserInputs();
 
-  /* FUNCTIONS DEALING DIRECTLY WITH CREATING A K MATRIX */
-  void runKMatrixCreationProgram();
-  bool askIfKMatrixShouldBeCreated(boost::filesystem::path);
-  void createKMatrixFromImagesInPath(boost::filesystem::path);
-  void loadNecessaryKMatrixFiles();
-  void calculateKMatrix();
-  // void createMapOfKMatrices(std::map<std::string, Image> &);
-  // void averageKMatricesForFinal(const std::map<std::string, Image> &);
-  // Image getKMatrixFromTemperatureImage(double airTemp, const Image &);
+  // Confirm preinitalized variables are correct.
+  void confirmConductanceMapVariableInitializationIsCorrect();
+  void confirmKMatrixCreationVariableInitializationIsCorrect();
+  void confirmBaseSaveDirectoryPathIsCorrect();
+  void confirmKMatrixDirectoryPathIsCorrect();
+  void confirmProgramDataInputFilePathIsCorrect();
+  void confirmTemperatureFilesPathIsCorrect();
+  bool askIfPathIsCorrectForFile(const std::string &message, const Path &path);
+  Path getCorrectPathFromUser();
+  void confirmCropImageCoordinatesAreCorrect();
 
-  /* FUNCTIONS DEALING DIRECTLY WITH CREATING CONDUCTANCE MAPS */
-  void runConductanceMapCreationProgram();
-  void loadNecessaryConductanceProgramFiles();
+  // Load necessary data
+  void loadAllConductanceProgramData();
+  void parseInputFileLine(std::istringstream &);
+  Image loadImageFromFile(const Path &);
+  std::vector<double> parseImageFileRow(const std::string &);
+  void loadKMatrixWithIdentifier(const std::string &tempId,
+                                 const std::string &kMatrixId);
+  void loadTemperatureImagesWithIdentifier(const std::string &tempId);
+  Image getAndAverageImagesWithIdentifier(const std::string &, const Path &);
+  Image averageImages(const std::vector<Image> &);
+  std::pair<double, double> loadAirTemperatures(double flThermo,
+                                                double blThermo,
+                                                double frThermo,
+                                                double brThermo);
+
+  // Convert from Excel coordinates to standard
+  Coordinate convertExcelNumberToStandard(const std::string &);
+  int convertExcelXCoordinate(const std::string &);
+  int getCharValue(char);
+
+  // Create conductance maps
   void createConductanceMaps();
   Image createConductanceImage(std::string, const Image &);
   double calculateConductance(std::string, int, int, double);
+
+  // Get data for conductance equations
+  double getKMatrixValue(std::string, int, int);
+  double getAirTemp(std::string, double);
+  double getAirTempGivenRatio(std::string, double);
+  double getWaValue(std::string);
+  double getWpValue(double);
+  double getDeltaWValue(const std::string &, const Coordinate &);
+  double getPixelTemp(std::string, const Coordinate &);
+  double getLeafletAverageK(const std::string &, const Coordinate &);
+  double getLeafletTemp(std::string, const Coordinate &);
+  double getLeafletConductance(const std::string &, double, const Coordinate &);
+
+  // Save data to files
+  void saveAverageTemperatureImages();
+  void saveImage(const Path &, const Image &);
+
+  // Create pixel summary file
   void summarizeSelectedPixels();
-
-  /* FUNCTIONS DEALING WITH PATCH DATA CALCULATION PROGRAM EXECUTION */
-  void runPixelSummaryProgram();
-  // void readConductanceImages();
-
-  /* FUNCTIONS DEALING WITH LOADING DATA FROM FILES */
-
-  void loadKMatrix(std::string, std::string);
-
-  void loadDataFile();
-  void parseInputFileLine(std::istringstream &);
-  void readTemperatureImagesFromDirectory(const std::string &);
-  void readConductanceImagesFromDirectory();
-  std::pair<std::string, Image>
-      getFilesFromDirectoryWithIdentifier(boost::filesystem::path, std::string);
-  bool confirmShouldLoadImageBasedOnDataFile(std::string);
-  Image loadImageFromFile(std::string fileName);
-  std::vector<double> parseRow(std::string &);
-
-  /* FUNCTIONS DEALING WITH SAVING IMAGES TO FILES */
-  void saveImage(const std::string &fileName, const Image &image);
-  void saveAveragedTemperatureImages();
-
-  /* FUNCTIONS DEALING WITH SAVING PIXEL DATA TO FILES */
+  std::vector<std::string> getPixelChoicesFromUser();
   void createSelectedPixelsFile(const std::vector<std::string> &);
   void writeCoordinateHeader(std::ofstream &, const Coordinate &);
   void printParticularPixelData(std::ofstream &, const Coordinate &);
 
-  /* FUNCTIONS DEALING WITH DATA INPUT COMPATIBILITY */
-  // void checkDataAndImageNumberCompatability();
-  // bool dataFileNumberHasMatchingTempFile(std::string);
-
-  /* FUNCTIONS DEALING WITH AVERING A SERIES OF IMAGES */
-  // void averageRawTemperatureImages();
-  // void averageImages(
-  //     std::string, std::pair<ImageMultimap::iterator,
-  //     ImageMultimap::iterator>);
-  Image getAverageOfImages(const std::vector<Image> &);
-
-  /* FUNCTIONS DEALING WITH CONVERTING FROM EXCEL COORDINATES TO STANDARD */
-  Coordinate convertExcelNumberToStandard(std::string);
-  int convertExcelXCoordinate(std::string);
-  int getCharValue(char);
-
-  /* FUNCTIONS DEALING WITH GETTING NECESSARY PARAMETERS FOR EQUATIONS */
-  Image getKMatrix(std::string);
-  double getAirTemp(std::string);
-  double getWaValue(std::string);
-  double getWpValue(double);
-  double getDeltaWValue(const std::string &, int, int);
-  double getPixelTemp(std::string, const Coordinate &);
-  double getLeafletTemp(std::string, const Coordinate &);
-  double getLeafletConductance(const Image &, const Coordinate &);
-  double getLeafletDeltaW(const std::string &, const Coordinate &);
+  // Create K Matrix
+  void iterateThroughKMatrixDirectoriesAndCreate();
+  bool askIfKMatrixShouldBeCreated(const Path &);
+  void getKMatrixDirectoryInputs();
+  double getTemperatureOfThermocouple(const std::string &);
+  void createKMatrix(const Path &);
+  Image loadAndAverageAllFilesInDirectory(const Path &);
+  double getPixelKValue(double, double);
 };
 
 #endif

@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 
-#include "ImageConverter2.hpp"
+#include "ImageConverter.hpp"
 
 int main(void) {
   std::string baseDirectory = "/Users/katiesweet/Desktop/Patchy/";

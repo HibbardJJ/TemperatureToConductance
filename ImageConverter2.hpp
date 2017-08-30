@@ -45,12 +45,10 @@ private:
   // Main Program Execution
   void runKMatrixCreationProgram(const Path &);
   void runConductanceMapCreationProgram(const Path &);
-  void runPixelSummaryProgram(const Path &);
 
   // Initialize variables particular to each program execution type.
   void initializeVariablesForKMatrixProgram(const Path &);
   void initializeVariablesForConductanceMapProgram(const Path &);
-  void initializeVariablesForPixelSummaryProgram(const Path &);
 
   // Basic user input communication.
   int getProgramExecutionType();
@@ -60,12 +58,14 @@ private:
 
   // Confirm preinitalized variables are correct.
   void confirmConductanceMapVariableInitializationIsCorrect();
+  void confirmKMatrixCreationVariableInitializationIsCorrect();
   void confirmBaseSaveDirectoryPathIsCorrect();
   void confirmKMatrixDirectoryPathIsCorrect();
   void confirmProgramDataInputFilePathIsCorrect();
   void confirmTemperatureFilesPathIsCorrect();
   bool askIfPathIsCorrectForFile(const std::string &message, const Path &path);
   Path getCorrectPathFromUser();
+  void confirmCropImageCoordinatesAreCorrect();
 
   // Load necessary data
   void loadAllConductanceProgramData();
@@ -95,17 +95,34 @@ private:
   // Get data for conductance equations
   double getKMatrixValue(std::string, int, int);
   double getAirTemp(std::string, double);
+  double getAirTempGivenRatio(std::string, double);
   double getWaValue(std::string);
   double getWpValue(double);
-  double getDeltaWValue(const std::string &, int, int);
+  double getDeltaWValue(const std::string &, const Coordinate &);
   double getPixelTemp(std::string, const Coordinate &);
+  double getLeafletAverageK(const std::string &, const Coordinate &);
   double getLeafletTemp(std::string, const Coordinate &);
-  double getLeafletConductance(const Image &, const Coordinate &);
-  double getLeafletDeltaW(const std::string &, const Coordinate &);
+  double getLeafletConductance(const std::string &, double, const Coordinate &);
 
   // Save data to files
   void saveAverageTemperatureImages();
   void saveImage(const Path &, const Image &);
+
+  // Create pixel summary file
+  void summarizeSelectedPixels();
+  std::vector<std::string> getPixelChoicesFromUser();
+  void createSelectedPixelsFile(const std::vector<std::string> &);
+  void writeCoordinateHeader(std::ofstream &, const Coordinate &);
+  void printParticularPixelData(std::ofstream &, const Coordinate &);
+
+  // Create K Matrix
+  void iterateThroughKMatrixDirectoriesAndCreate();
+  bool askIfKMatrixShouldBeCreated(const Path &);
+  void getKMatrixDirectoryInputs();
+  double getTemperatureOfThermocouple(const std::string &);
+  void createKMatrix(const Path &);
+  Image loadAndAverageAllFilesInDirectory(const Path &);
+  double getPixelKValue(double, double);
 };
 
 #endif

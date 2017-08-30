@@ -16,9 +16,6 @@ ImageConverter::ImageConverter(const Path &pathToBaseDirectory) {
   case 2:
     runConductanceMapCreationProgram(pathToBaseDirectory);
     break;
-  case 3:
-    runPixelSummaryProgram(pathToBaseDirectory);
-    break;
   }
 }
 
@@ -29,6 +26,8 @@ void ImageConverter::runKMatrixCreationProgram(
     const Path &pathToBaseDirectory) {
   std::cout << "Starting KMatrix Creation Program" << std::endl;
   initializeVariablesForKMatrixProgram(pathToBaseDirectory);
+  confirmKMatrixCreationVariableInitializationIsCorrect();
+  iterateThroughKMatrixDirectoriesAndCreate();
 }
 
 void ImageConverter::runConductanceMapCreationProgram(
@@ -38,17 +37,8 @@ void ImageConverter::runConductanceMapCreationProgram(
   confirmConductanceMapVariableInitializationIsCorrect();
   loadAllConductanceProgramData();
   saveAverageTemperatureImages();
-
-  for (auto &&map : kMatrices) {
-    std::cout << map.first << std::endl;
-  }
-
   createConductanceMaps();
-}
-
-void ImageConverter::runPixelSummaryProgram(const Path &pathToBaseDirectory) {
-  std::cout << "Starting Pixel Summary Creation Program" << std::endl;
-  initializeVariablesForPixelSummaryProgram(pathToBaseDirectory);
+  summarizeSelectedPixels();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -81,21 +71,6 @@ void ImageConverter::initializeVariablesForConductanceMapProgram(
   bottomRightWindowCoordinate = convertExcelNumberToStandard("VN434");
 }
 
-/* Pixel Calculation Program */
-void ImageConverter::initializeVariablesForPixelSummaryProgram(
-    const Path &pathToBaseDirectory) {
-  std::string basePath = pathToBaseDirectory.generic_string();
-  getDateFromUser();
-  baseSaveDirectory = Path(basePath + "Data/" + date + "/");
-  programDataInputFile =
-      Path(basePath + "Data/" + date + "/DataExtraction.csv");
-  temperatureImagesDirectory =
-      Path(basePath + "Data/" + date + "/AverageTempImages/");
-  kMatrixDirectory = Path(basePath + "KMatrix/"); // Shouldn't be used
-  topLeftWindowCoordinate = Coordinate(0, 0);
-  bottomRightWindowCoordinate = Coordinate(1000000, 1000000);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 /* CONFIRM INITIALIZED VARIABLES ARE CORRECT */
 
@@ -105,6 +80,12 @@ void ImageConverter::confirmConductanceMapVariableInitializationIsCorrect() {
   confirmKMatrixDirectoryPathIsCorrect();
   confirmProgramDataInputFilePathIsCorrect();
   confirmTemperatureFilesPathIsCorrect();
+  confirmCropImageCoordinatesAreCorrect();
+}
+
+void ImageConverter::confirmKMatrixCreationVariableInitializationIsCorrect() {
+  confirmKMatrixDirectoryPathIsCorrect();
+  confirmCropImageCoordinatesAreCorrect();
 }
 
 void ImageConverter::confirmBaseSaveDirectoryPathIsCorrect() {
@@ -147,6 +128,34 @@ Path ImageConverter::getCorrectPathFromUser() {
   return Path(newLocation);
 }
 
+/* Gets the upper left and bottom right coordinates that will be used to crop
+the raw temperature data to the region of interest. */
+void ImageConverter::confirmCropImageCoordinatesAreCorrect() {
+  std::string topLeftCoordinate = "EX72";
+  std::string bottomRightCoordinate = "VN434";
+
+  std::cout << "Are the window coordinates you'd like to crop the images to : "
+               "( " +
+                   topLeftCoordinate + ", " + bottomRightCoordinate +
+                   " )? [Enter y/n]"
+            << std::endl;
+  bool answeredYes = getYesNoResponseFromUser();
+  if (!answeredYes) {
+    std::cout << "Please enter the Excel coordinate of the top left pixel of "
+                 "the window."
+              << std::endl;
+    std::getline(std::cin, topLeftCoordinate);
+    std::cout << "Please enter the Excel coordinate of the bottom right pixel "
+                 "of the window."
+              << std::endl;
+    std::getline(std::cin, bottomRightCoordinate);
+  }
+
+  topLeftWindowCoordinate = convertExcelNumberToStandard(topLeftCoordinate);
+  bottomRightWindowCoordinate =
+      convertExcelNumberToStandard(bottomRightCoordinate);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 /* BASIC USER INPUT COMMUNICATION */
 
@@ -155,9 +164,6 @@ int ImageConverter::getProgramExecutionType() {
   std::cout << "What type of program would you like to run?" << std::endl;
   std::cout << "\tEnter '1' to create a K Matrix." << std::endl;
   std::cout << "\tEnter '2' to create Conductance Maps." << std::endl;
-  std::cout << "\tEnter '3' to analyze patches of previously created "
-               "conductance maps."
-            << std::endl;
   std::string choice;
   std::getline(std::cin, choice);
   return std::stoi(choice);
@@ -205,7 +211,7 @@ void ImageConverter::loadAllConductanceProgramData() {
   std::string inputLine;
   while (!inputFile.eof()) {
     std::getline(inputFile, inputLine);
-    std::cout << inputLine << std::endl;
+    // std::cout << inputLine << std::endl;
     if (!inputLine.empty()) {
       std::istringstream rowToParse(inputLine);
       parseInputFileLine(rowToParse);
@@ -219,7 +225,7 @@ void ImageConverter::parseInputFileLine(std::istringstream &rowToParse) {
   // Get temperature image identifier
   std::getline(rowToParse, data, ',');
   std::string imageIdentifier = data;
-  std::cout << "Identifier: " << imageIdentifier << std::endl;
+  // std::cout << "Identifier: " << imageIdentifier << std::endl;
   loadTemperatureImagesWithIdentifier(imageIdentifier);
 
   // Get KMatrix image identifier
@@ -308,7 +314,7 @@ void ImageConverter::loadKMatrixWithIdentifier(const std::string &tempId,
   // }
 
   // We are potentially loading the same KMatrix multiple times. It's a waste of
-  // memory, but it isn't causing major problems, so I'm just dealing with it
+  // memory, but it isn't causing problems, so I'm just dealing with it
   // for now.
 
   boost::filesystem::directory_iterator end_itr;
@@ -452,7 +458,6 @@ void ImageConverter::createConductanceMaps() {
 // Creates a particular conductance map.
 Image ImageConverter::createConductanceImage(std::string imageIdentifier,
                                              const Image &tempImage) {
-  std::cout << "Creating Conductance Image: " << imageIdentifier << std::endl;
   Image conductanceImage;
   for (int row = 0; row < tempImage.size(); ++row) {
     std::vector<double> newRow;
@@ -475,8 +480,6 @@ double ImageConverter::calculateConductance(std::string imageIdentifier,
   // g = ( R + K(Ta - Tp) ) / ( Lw * (wp - wa) )
   const double Lw = 40.68;
   double K = getKMatrixValue(imageIdentifier, row, column);
-  // double K = getKMatrix(imageIdentifier).at(row).at(column);
-  // double K = kMatrices.begin()->second.at(row).at(column);
   double Ta = getAirTemp(imageIdentifier, column);
   double Wa = getWaValue(imageIdentifier);
   double Wp = getWpValue(pixelTemp);
@@ -521,6 +524,24 @@ double ImageConverter::getAirTemp(std::string imageIdentifier, double column) {
   }
 }
 
+double ImageConverter::getAirTempGivenRatio(std::string imageId, double ratio) {
+  auto it = airTemps.find(imageId);
+  if (it != airTemps.end()) {
+    auto airTempPair = it->second;
+
+    // airTempPair.first == airTemp at column 0
+    // airTempPair.second == airTemp at column (numberColumns) /
+    // (numberColumns)
+    // say temperature is linear between them
+
+    return airTempPair.second * ratio + airTempPair.first;
+    // return airTempPair.first;
+  } else {
+    throw std::runtime_error("Temperature image " + imageId +
+                             " does not have corresponding air temp value.");
+  }
+}
+
 // Get the wa value associated with a specific image number (from data
 // file).
 double ImageConverter::getWaValue(std::string imageIdentifier) {
@@ -544,8 +565,8 @@ double ImageConverter::getWpValue(double pixelTemp) {
 }
 
 double ImageConverter::getDeltaWValue(const std::string &imageIdentifier,
-                                      int row, int column) {
-  double pixelTemp = getPixelTemp(imageIdentifier, Coordinate(column, row));
+                                      const Coordinate &coordinate) {
+  double pixelTemp = getPixelTemp(imageIdentifier, coordinate);
   double deltaW = getWpValue(pixelTemp) - getWaValue(imageIdentifier);
   std::cout << deltaW << std::endl;
   return deltaW;
@@ -585,8 +606,32 @@ double ImageConverter::getLeafletTemp(std::string imageIdentifier,
     sum += tempImage.at(coordinate.second + 1).at(coordinate.first + 1);
     return sum / 9.0;
   } else {
+    throw std::runtime_error(
+        "Unexpected error saving leaflet data. "
+        "Conductance identifier and temperature identifier do "
+        "not match.");
+  }
+}
+
+double ImageConverter::getLeafletAverageK(const std::string &imageKey,
+                                          const Coordinate &coordinate) {
+  auto location = kMatrices.find(imageKey);
+  if (location != kMatrices.end()) {
+    Image kMatrix = location->second;
+    double sum = 0.0;
+    sum += kMatrix.at(coordinate.second - 1).at(coordinate.first - 1);
+    sum += kMatrix.at(coordinate.second - 1).at(coordinate.first);
+    sum += kMatrix.at(coordinate.second - 1).at(coordinate.first + 1);
+    sum += kMatrix.at(coordinate.second).at(coordinate.first - 1);
+    sum += kMatrix.at(coordinate.second).at(coordinate.first);
+    sum += kMatrix.at(coordinate.second).at(coordinate.first + 1);
+    sum += kMatrix.at(coordinate.second + 1).at(coordinate.first - 1);
+    sum += kMatrix.at(coordinate.second + 1).at(coordinate.first);
+    sum += kMatrix.at(coordinate.second + 1).at(coordinate.first + 1);
+    return sum / 9.0;
+  } else {
     throw std::runtime_error("Unexpected error saving leaflet data. "
-                             "Conducatance number and temperature number do "
+                             "KMatrix identifier and temperature identifier do "
                              "not match.");
   }
 }
@@ -594,13 +639,20 @@ double ImageConverter::getLeafletTemp(std::string imageIdentifier,
 // Gets the average conductance of a 9 pixel leaflet centered at the
 // coordinate,
 // and with image number specified.
-double ImageConverter::getLeafletConductance(const Image &conductanceImage,
+double ImageConverter::getLeafletConductance(const std::string &imageId,
+                                             double leafletTemperature,
                                              const Coordinate &coordinate) {
-  return 0.0;
-}
+  // g = ( R + K(Ta - Tp) ) / ( Lw * (wp - wa) )
+  const double Lw = 40.68;
+  double kValue = getLeafletAverageK(imageId, coordinate);
+  double Wp = getWpValue(leafletTemperature);
+  double Wa = getWaValue(imageId);
+  double Ta = getAirTemp(imageId, coordinate.first);
 
-double ImageConverter::getLeafletDeltaW(const std::string &identifier,
-                                        const Coordinate &coordinate) {
+  double numerator = rValue + kValue * (Ta - leafletTemperature);
+  double denominator = Lw * (Wp - Wa);
+  return numerator / denominator;
+
   return 0.0;
 }
 
@@ -637,4 +689,191 @@ void ImageConverter::saveImage(const Path &fileName, const Image &image) {
     throw std::runtime_error("ERROR OPENING FILE: " + fileName.string());
     // std::cout << "ERROR OPENING FILE: " << fileName << std::endl;
   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/* FUNCTIONS DEALING WITH SAVING PIXEL DATA TO FILES */
+
+// Gets pixels user would like to save data for, gathers and saves that data.
+void ImageConverter::summarizeSelectedPixels() {
+  std::cout << "Would you like to pull data about particular leaflets? [y/n]"
+            << std::endl;
+  bool answer = getYesNoResponseFromUser();
+  if (answer) {
+    std::vector<std::string> coordinatesToAnalyze = getPixelChoicesFromUser();
+    createSelectedPixelsFile(coordinatesToAnalyze);
+  }
+}
+
+/* Gets a vector of excel coordinates that the user wants to get leaflet data
+ * for. */
+std::vector<std::string> ImageConverter::getPixelChoicesFromUser() {
+  std::cout << "Please enter a list of Excel pixel coordinates you would like "
+               "to analyze. Please use a space to separate the choices."
+            << std::endl;
+  std::vector<std::string> coordinatesToAnalyze;
+  std::string listOfCoordinates;
+  std::getline(std::cin, listOfCoordinates);
+  std::istringstream rowToParse(listOfCoordinates);
+  for (std::string coordinate; std::getline(rowToParse, coordinate, ' ');) {
+    if (!coordinate.empty()) {
+      coordinatesToAnalyze.push_back(coordinate);
+    }
+  }
+  return coordinatesToAnalyze;
+}
+
+// Creates the file that holds leaflet data, based on users preferences.
+void ImageConverter::createSelectedPixelsFile(
+    const std::vector<std::string> &coordinates) {
+  std::ofstream outputFile;
+  Path pathToFile = baseSaveDirectory.generic_string() + "PixelAnalysis.csv";
+  outputFile.open(pathToFile.string());
+  std::cout << "Saving file: " << pathToFile.string() << std::endl;
+  if (outputFile.is_open()) {
+    for (auto &&excelCoordinate : coordinates) {
+      outputFile << "Excel Coordinate:," << excelCoordinate << std::endl;
+      Coordinate coordinate = convertExcelNumberToStandard(excelCoordinate);
+      writeCoordinateHeader(outputFile, coordinate);
+      printParticularPixelData(outputFile, coordinate);
+      outputFile << std::endl;
+    }
+  }
+}
+
+// Writes the header for each particular selected pixel.
+void ImageConverter::writeCoordinateHeader(std::ofstream &outputFile,
+                                           const Coordinate &coordinate) {
+  outputFile << "Standard X Coordinate:," << coordinate.first << std::endl;
+  outputFile << "Standard Y Coordiante:," << coordinate.second << std::endl;
+  outputFile << "Image identifier, Image Xout/Wa,, Pixel Temp , Pixel "
+                "DeltaW , Pixel "
+                "Conductance ,, Leaflet Temp, Leaflet DeltaW,  Leaflet "
+                "Conductance"
+             << std::endl;
+}
+
+// Prints the desired data (temp, conductance, delta w) for each
+// pixel/leaflet.
+void ImageConverter::printParticularPixelData(std::ofstream &outputFile,
+                                              const Coordinate &coordinate) {
+  // std::cout << "Printing coordinate: (" << coordinate.first << ","
+  //           << coordinate.second << ")" << std::endl;
+  for (auto &&temperatureImage : averageTemperatureImages) {
+    std::string imageIdentifier = temperatureImage.first;
+
+    // Print image identifier
+    outputFile << imageIdentifier << ",";
+
+    // Print image Wa value
+    double waValue = getWaValue(imageIdentifier);
+    outputFile << waValue << ",,";
+
+    // Print pixel temp
+    double pixelTemp = getPixelTemp(imageIdentifier, coordinate);
+    outputFile << pixelTemp << ",";
+
+    // Print pixel delta w
+    outputFile << getWpValue(pixelTemp) - waValue << ",";
+
+    // Print pixel conductance
+    outputFile << calculateConductance(imageIdentifier, coordinate.second,
+                                       coordinate.first, pixelTemp)
+               << ",,";
+
+    // Print leaflet temp
+    double leafletTemp = getLeafletTemp(imageIdentifier, coordinate);
+    outputFile << leafletTemp << ",";
+
+    // Print leaflet delta w using average temperature
+    outputFile << getWpValue(leafletTemp) - waValue << ",";
+
+    // Print leaflet conductance using average temperature
+    outputFile << getLeafletConductance(imageIdentifier, leafletTemp,
+                                        coordinate)
+               << std::endl;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/* Create K Matrix */
+
+void ImageConverter::iterateThroughKMatrixDirectoriesAndCreate() {
+  boost::filesystem::directory_iterator endItr;
+
+  for (boost::filesystem::directory_iterator itr(kMatrixDirectory);
+       itr != endItr; ++itr) {
+    if (boost::filesystem::is_directory(itr->path())) {
+      if (askIfKMatrixShouldBeCreated(itr->path())) {
+        getKMatrixDirectoryInputs();
+        createKMatrix(itr->path());
+      }
+    }
+  }
+}
+
+bool ImageConverter::askIfKMatrixShouldBeCreated(const Path &path) {
+  std::cout << "Would you like to make a KMatrix with the images in the path "
+            << path << "?" << std::endl;
+  return getYesNoResponseFromUser();
+}
+
+void ImageConverter::getKMatrixDirectoryInputs() {
+  getRValueFromUser();
+
+  double upperBeforeThermocouple =
+      getTemperatureOfThermocouple("'upper before'");
+  double upperAfterThermocouple = getTemperatureOfThermocouple("'upper after'");
+  double lowerBeforeThermocouple =
+      getTemperatureOfThermocouple("'lower before'");
+  double lowerAfterThermocouple = getTemperatureOfThermocouple("'lower after'");
+
+  std::pair<double, double> airTemp;
+  airTemp.first = (upperBeforeThermocouple + lowerBeforeThermocouple) / 2.0;
+  airTemp.second = (upperAfterThermocouple + lowerAfterThermocouple) / 2.0;
+
+  airTemps.insert(std::make_pair("all", airTemp));
+}
+
+double ImageConverter::getTemperatureOfThermocouple(const std::string &name) {
+  std::cout << "Please enter the temperature of the " << name << " thermocouple"
+            << std::endl;
+  std::string thermocoupleTemp;
+  std::getline(std::cin, thermocoupleTemp);
+  return std::stod(thermocoupleTemp);
+}
+
+void ImageConverter::createKMatrix(const Path &directory) {
+  Image tempImage = loadAndAverageAllFilesInDirectory(directory);
+  Image kMatrix;
+  for (auto &&row : tempImage) {
+    std::vector<double> kMatrixRow;
+    for (int column = 0; column < row.size(); ++column) {
+      kMatrixRow.push_back(getPixelKValue(row[column], column / row.size()));
+    }
+    kMatrix.push_back(kMatrixRow);
+  }
+  std::string fullPathName = kMatrixDirectory.generic_string() + "KMatrix_" +
+                             directory.stem().generic_string() + ".csv";
+  saveImage(Path(fullPathName), kMatrix);
+}
+
+Image ImageConverter::loadAndAverageAllFilesInDirectory(const Path &dir) {
+  boost::filesystem::directory_iterator endItr;
+  std::vector<Image> imagesInDirectory;
+
+  for (boost::filesystem::directory_iterator itr(dir); itr != endItr; ++itr) {
+    if (is_regular_file(itr->path()) &&
+        itr->path().filename().string() != ".DS_Store") {
+      imagesInDirectory.push_back(loadImageFromFile(itr->path()));
+    }
+  }
+  return averageImages(imagesInDirectory);
+}
+
+double ImageConverter::getPixelKValue(double pixelTemp,
+                                      double ratioOfColumnToNumColums) {
+  // K(p) = R / (T(p) - T_air)
+  double T_air = getAirTempGivenRatio("all", ratioOfColumnToNumColums);
+  return rValue / (pixelTemp - T_air);
 }
